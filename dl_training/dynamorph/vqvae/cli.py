@@ -1,4 +1,4 @@
-from dl_training.dynamorph.vqvae.simple_train import main
+import simple_train.main as main
 import argparse
 import logging
 from datetime import datetime

@@ -1,8 +1,11 @@
 import numpy as np
 import os
 import pickle
-from .vq_vae_supp import reorder_with_trajectories, vae_preprocess
-from .vq_vae import VQ_VAE
+# from .vq_vae_supp import reorder_with_trajectories, vae_preprocess
+import vq_vae_supp.reorder_with_trajectories as reorder_with_trajectories
+import vq_vae_supp.vae_preprocess as vae_preprocess
+#from .vq_vae import VQ_VAE
+import vq_vae.VQ_VAE as VQ_VAE
 import torch as t
 from torch.utils.data import TensorDataset
 from torch.utils.tensorboard import SummaryWriter
