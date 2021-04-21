@@ -154,10 +154,10 @@ def train(model,
 def main(args_):
 
     ### Settings ###
-    # channels = args_.channels
+    channels = args_.channels
     model_output_dir = args_.model_output_dir
     device = args_.device
-    channels = [1]
+    # channels = [1]
     # model_output_dir = "./retardance_only_model"
     # device = "cuda:1"
 

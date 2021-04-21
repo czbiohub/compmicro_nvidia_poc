@@ -37,9 +37,9 @@ def parse_args():
     )
     parser.add_argument(
         '-c', '--channels',
-        type=lambda s: [str(item.strip(' ').strip("'")) for item in s.split(',')],
+        type=lambda s: [int(item.strip(' ').strip("'")) for item in s.split(',')],
         required=False,
-        help="",
+        help="list of integers like '1,2,3' corresponding to channel indicies",
     )
     parser.add_argument(
         '-d', '--device',

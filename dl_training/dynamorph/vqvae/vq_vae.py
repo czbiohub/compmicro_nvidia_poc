@@ -191,7 +191,7 @@ class VQ_VAE(nn.Module):
             **kwargs: other keyword arguments
 
         """
-        super(VQ_VAE, self).__init__(**kwargs)
+        super(VQ_VAE, self).__init__()
         self.num_inputs = num_inputs
         self.num_hiddens = num_hiddens
         self.num_residual_layers = num_residual_layers
