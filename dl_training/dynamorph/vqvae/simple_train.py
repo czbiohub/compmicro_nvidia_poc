@@ -11,6 +11,7 @@ import torch as t
 from torch.utils.data import TensorDataset
 from torch.utils.tensorboard import SummaryWriter
 import logging
+import glob
 
 
 # logging.basicConfig(
@@ -82,6 +83,7 @@ def train(model,
     if shuffle_data:
         np.random.shuffle(sample_ids)
     writer = SummaryWriter(output_dir)
+    log.info(f"\ttensorboard logs written to {output_dir}")
 
     for epoch in range(n_epochs):
         mean_loss = {'recon_loss': [],
@@ -89,7 +91,7 @@ def train(model,
                      'time_matching_loss': [],
                      'total_loss': [],
                      'perplexity': []}
-        log.info('start epoch %d' % epoch)
+        log.info('\tstart epoch %d' % epoch)
         for i in range(n_batches):
             # Deal with last batch might < batch size
             sample_ids_batch = sample_ids[i * batch_size:min((i + 1) * batch_size, n_samples)]
@@ -143,10 +145,12 @@ def train(model,
             mean_loss[key] = sum(loss) / len(loss) if len(loss) > 0 else -1.
             writer.add_scalar('Loss/' + key, mean_loss[key], epoch)
         writer.flush()
-        log.info('epoch %d' % epoch)
-        log.info(''.join(['{}:{:0.4f}  '.format(key, loss) for key, loss in mean_loss.items()]))
+        log.info('\tepoch %d' % epoch)
+        log.info('\t'.join(['{}:{:0.4f}  '.format(key, loss) for key, loss in mean_loss.items()]))
 
+        # log.info(f"\tcheckpoint save at epoch {epoch}")
         t.save(model.state_dict(), os.path.join(output_dir, 'model_epoch%d.pt' % epoch))
+
     writer.close()
     return model
 
@@ -157,12 +161,14 @@ def main(args_):
     channels = args_.channels
     model_output_dir = args_.model_output_dir
     device = args_.device
+    project_dir = args_.project_dir
+
     # channels = [1]
     # model_output_dir = "./retardance_only_model"
     # device = "cuda:1"
 
     ### Prepare Data ###
-    project_dir = args_.project_dir
+    log.info("LOADING FILES")
     fs = pickle.load(open(os.path.join(project_dir, 'JUNE', 'raw', 'D_file_paths.pkl'), 'rb'))
     dataset = pickle.load(open(os.path.join(project_dir, 'JUNE', 'raw', 'D_static_patches.pkl'), 'rb'))
     dataset_mask = pickle.load(open(os.path.join(project_dir, 'JUNE', 'raw', 'D_static_patches_mask.pkl'), 'rb'))
@@ -175,6 +181,7 @@ def main(args_):
     # relations = pickle.load(open(os.path.join(path, 'JUNE', 'raw', 'D_static_patches_relations.pkl'), 'rb'))
 
     # Reorder
+    log.info("PREPARING LOADED DATA")
     dataset, relation_mat, inds_in_order = reorder_with_trajectories(dataset, relations, seed=123)
     fs = [fs[i] for i in inds_in_order]
     dataset_mask = dataset_mask[np.array(inds_in_order)]
@@ -187,7 +194,7 @@ def main(args_):
     os.makedirs(os.path.join(model_output_dir, "stage2"), exist_ok=True)
 
     # Stage 1 training
-    log.info("STARTING STAGE 1")
+    log.info("TRAINING: STARTING STAGE 1")
     model = VQ_VAE(num_inputs=1, alpha=0., channel_var=np.ones((1,)), device=device)
     model = model.to(device)
     model = train(model,
@@ -195,23 +202,30 @@ def main(args_):
                   os.path.join(model_output_dir, "stage1"),
                   relation_mat=relation_mat,
                   mask=dataset_mask,
-                  n_epochs=100,
+                  # n_epochs=100,
+                  n_epochs=10,
                   lr=0.0001,
                   batch_size=128,
                   device=device,
                   shuffle_data=False,
                   transform=True)
 
-    log.info("STARTING STAGE 2")
+    log.info("TRAINING: STARTING STAGE 2")
     model = VQ_VAE(num_inputs=1, alpha=0.0005, channel_var=np.ones((1,)), device=device)
     model = model.to(device)
-    model.load_state_dict(t.load(os.path.join(model_output_dir, "stage1", "model_epoch99.pt")))
+    # get the last saved epoch.  on IBM, use max(). on OSX use min()
+    # s1_epochs = glob.glob(os.path.join(model_output_dir, "stage1", "/*"))
+    s1_epochs = glob.glob(os.path.join(model_output_dir, "stage1") + '/*.pt')
+    last_epoch = max(s1_epochs, key=os.path.getctime)
+    # model.load_state_dict(t.load(os.path.join(model_output_dir, "stage1", "model_epoch99.pt")))
+    model.load_state_dict(t.load(last_epoch))
     model = train(model,
                   dataset,
                   os.path.join(model_output_dir, "stage2"),
                   relation_mat=relation_mat,
                   mask=dataset_mask,
-                  n_epochs=400,
+                  # n_epochs=400,
+                  n_epochs=40,
                   lr=0.0001,
                   batch_size=128,
                   device=device,

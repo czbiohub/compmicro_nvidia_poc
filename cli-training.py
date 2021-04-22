@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
     # start logs
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         # format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
             logging.FileHandler(f"{args.model_output_dir}/{start.strftime('%Y_%m_%d_%H_%M')}.log"),
@@ -76,4 +76,4 @@ if __name__ == "__main__":
     stop = datetime.now()
     log.info(f"================ END vq-vae training ============== ")
     log.info(f"================== {stop.strftime('%Y_%m_%d_%H_%M')} ================= ")
-    log.info(f"time elapsed = {(stop-start).days}_{(stop-start).seconds}")
+    log.info(f"time elapsed = {(stop-start).days}-days_{(stop-start).seconds//60}-minutes_{(stop-start).seconds%60}-seconds")
