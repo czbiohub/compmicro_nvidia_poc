@@ -195,7 +195,7 @@ def main(args_):
 
     # Stage 1 training
     log.info("TRAINING: STARTING STAGE 1")
-    model = VQ_VAE(num_inputs=1, alpha=0., channel_var=np.ones((1,)), device=device)
+    model = VQ_VAE(num_inputs=1, weight_matching=0., channel_var=np.ones((1,)), device=device)
     model = model.to(device)
     model = train(model,
                   dataset,
@@ -211,12 +211,14 @@ def main(args_):
                   transform=True)
 
     log.info("TRAINING: STARTING STAGE 2")
-    model = VQ_VAE(num_inputs=1, alpha=0.0005, channel_var=np.ones((1,)), device=device)
+    model = VQ_VAE(num_inputs=1, weight_matching=0.0005, channel_var=np.ones((1,)), device=device)
     model = model.to(device)
+
     # get the last saved epoch.  on IBM, use max(). on OSX use min()
     # s1_epochs = glob.glob(os.path.join(model_output_dir, "stage1", "/*"))
     s1_epochs = glob.glob(os.path.join(model_output_dir, "stage1") + '/*.pt')
     last_epoch = max(s1_epochs, key=os.path.getctime)
+
     # model.load_state_dict(t.load(os.path.join(model_output_dir, "stage1", "model_epoch99.pt")))
     model.load_state_dict(t.load(last_epoch))
     model = train(model,
