@@ -1,8 +1,10 @@
-import simple_train.main as main
+# import simple_train.main as main
+from dl_training.dynamorph.vqvae.simple_train import main
 import argparse
 import logging
 from datetime import datetime
 import sys
+import torch
 
 """
 Dynamorph -- microglia -- VQ-VAE training
@@ -36,16 +38,22 @@ def parse_args():
     )
     parser.add_argument(
         '-c', '--channels',
-        type=lambda s: [str(item.strip(' ').strip("'")) for item in s.split(',')],
+        type=lambda s: [int(item.strip(' ').strip("'")) for item in s.split(',')],
         required=False,
-        help="",
+        help="list of integers like '1,2,3' corresponding to channel indicies",
     )
     parser.add_argument(
-        '-g', '--gpu_id',
-        type=int,
+        '-d', '--device',
+        type=str,
         required=False,
-        default=0,
-        help="ID of the GPU to use",
+        default='cuda:0',
+        help="GPU device ID. ex. cuda:0",
+    )
+    parser.add_argument(
+        '-m',
+        type=str,
+        required=True,
+        help="distributed gpu"
     )
     return parser.parse_args()
 
@@ -53,11 +61,15 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
+    # init ddl for pytorch
+    # https://www.ibm.com/docs/en/wmlce/1.7.0?topic=ddl-tutorial-pytorch
+    torch.distributed.init_process_group('ddl', init_method='env://')
+
     start = datetime.now()
 
     # start logs
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         # format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
             logging.FileHandler(f"{args.model_output_dir}/{start.strftime('%Y_%m_%d_%H_%M')}.log"),
@@ -75,4 +87,4 @@ if __name__ == "__main__":
     stop = datetime.now()
     log.info(f"================ END vq-vae training ============== ")
     log.info(f"================== {stop.strftime('%Y_%m_%d_%H_%M')} ================= ")
-    log.info(f"time elapsed = {(stop-start).days}_{(stop-start).seconds}")
+    log.info(f"time elapsed = {(stop-start).days}-days_{(stop-start).seconds//60}-minutes_{(stop-start).seconds%60}-seconds")
