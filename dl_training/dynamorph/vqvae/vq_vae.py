@@ -22,7 +22,7 @@ class VectorQuantizer(nn.Module):
     input)
 
     """
-    def __init__(self, embedding_dim=128, num_embeddings=128, commitment_cost=0.25, device='cuda:0'):
+    def __init__(self, embedding_dim=128, num_embeddings=128, commitment_cost=0.25, device=None):
         """ Initialize the module
 
         Args:
@@ -36,7 +36,8 @@ class VectorQuantizer(nn.Module):
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
         self.commitment_cost = commitment_cost
-        self.device = device
+        if device is not None:
+            self.device = device
         self.w = nn.Embedding(num_embeddings, embedding_dim)
 
     def forward(self, inputs):
@@ -66,7 +67,10 @@ class VectorQuantizer(nn.Module):
         loss = q_latent_loss + self.commitment_cost * e_latent_loss
 
         # Perplexity (used to monitor)
-        encoding_onehot = t.zeros(encoding_indices.flatten().shape[0], self.num_embeddings).to(self.device)
+        if self.device is not None:
+            encoding_onehot = t.zeros(encoding_indices.flatten().shape[0], self.num_embeddings).to(self.device)
+        else:
+            encoding_onehot = t.zeros(encoding_indices.flatten().shape[0], self.num_embeddings)
         encoding_onehot.scatter_(1, encoding_indices.flatten().unsqueeze(1), 1)
         avg_probs = t.mean(encoding_onehot, 0)
         perplexity = t.exp(-t.sum(avg_probs*t.log(avg_probs + 1e-10)))
@@ -169,7 +173,7 @@ class VQ_VAE(nn.Module):
                  weight_recon=1.,
                  weight_commitment=1.,
                  weight_matching=0.005,
-                 device="cuda:0",
+                 device=None,
                  **kwargs):
         """ Initialize the model
 
