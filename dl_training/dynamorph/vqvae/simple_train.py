@@ -34,7 +34,7 @@ def train(model,
           n_epochs=10,
           lr=0.001,
           batch_size=16,
-          device='cuda:0',
+          device=None,
           shuffle_data=False,
           transform=True,
           seed=None):
@@ -72,7 +72,8 @@ def train(model,
     n_channels = len(use_channels)
     assert n_channels == model.num_inputs
 
-    model = model.to(device)
+    if device:
+        model = model.to(device)
     optimizer = t.optim.Adam(model.parameters(), lr=lr, betas=(.9, .999))
     model.zero_grad()
 
@@ -160,8 +161,12 @@ def main(args_):
     ### Settings ###
     channels = args_.channels
     model_output_dir = args_.model_output_dir
-    device = args_.device
     project_dir = args_.project_dir
+
+    if args_.device:
+        device = args_.device
+    else:
+        device = None
 
     # channels = [1]
     # model_output_dir = "./retardance_only_model"
