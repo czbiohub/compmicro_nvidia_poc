@@ -1,10 +1,29 @@
-# import simple_train.main as main
-from dl_training.dynamorph.vqvae.simple_train import main
+"""
+DDL run training on ibm following tutorial
+https://www.ibm.com/docs/en/wmlce/1.7.0?topic=ddl-tutorial-pytorch
+$CONDA_PREFIX/lib/python$PY_VER/site-packages/torch/examples/ddl_examples/mnist/mnist.py
+
+and data from dynamorph vq-vae model
+
+"""
+from dl_training.dynamorph.vqvae.ddlrun_train import main_worker
 import argparse
 import logging
 from datetime import datetime
-import sys
+import sys, os
+
 import torch
+import torch.nn as nn
+import torch.nn.parallel
+import torch.backends.cudnn as cudnn
+import torch.distributed as dist
+import torch.optim
+import torch.utils.data
+import torch.utils.data.distributed
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+import torchvision.models as models
+import pyddl
 
 """
 Dynamorph -- microglia -- VQ-VAE training
@@ -42,28 +61,15 @@ def parse_args():
         required=False,
         help="list of integers like '1,2,3' corresponding to channel indicies",
     )
-    parser.add_argument(
-        '-d', '--device',
-        type=str,
-        required=False,
-        default='cuda:0',
-        help="GPU device ID. ex. cuda:0",
-    )
-    parser.add_argument(
-        '-m',
-        type=str,
-        required=True,
-        help="distributed gpu"
-    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
 
-    # init ddl for pytorch
-    # https://www.ibm.com/docs/en/wmlce/1.7.0?topic=ddl-tutorial-pytorch
-    torch.distributed.init_process_group('ddl', init_method='env://')
+    # set world_size retrieved from MPI
+    if os.getenv('OMPI_COMM_WORLD_SIZE'):
+        args.world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE'))
 
     start = datetime.now()
 
@@ -82,7 +88,7 @@ if __name__ == "__main__":
     log.info(f"================ BEGIN vq-vae training ============== ")
     log.info(f"================== {start.strftime('%Y_%m_%d_%H_%M')} ================= ")
 
-    main(args)
+    main_worker(args)
 
     stop = datetime.now()
     log.info(f"================ END vq-vae training ============== ")

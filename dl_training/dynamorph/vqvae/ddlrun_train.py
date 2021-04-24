@@ -1,27 +1,52 @@
-import numpy as np
-import os
-import pickle
-# from .vq_vae_supp import reorder_with_trajectories, vae_preprocess
-from dl_training.dynamorph.vqvae.vq_vae_supp import reorder_with_trajectories, vae_preprocess
-# import vq_vae_supp.reorder_with_trajectories as reorder_with_trajectories
-# import vq_vae_supp.vae_preprocess as vae_preprocess
+"""
+Based on https://github.com/pytorch/examples/blob/master/imagenet/main.py
+
+Distributed Data Parallel training on Imagenet
+Use Distributed Deep Learning - ddl backend
+
+Modifications:
+*****************************************************************
+
+Licensed Materials - Property of IBM
+
+(C) Copyright IBM Corp. 2018. All Rights Reserved.
+
+US Government Users Restricted Rights - Use, duplication or
+disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+
+*****************************************************************
+
+"""
 from .vq_vae import VQ_VAE
-# import vq_vae.VQ_VAE as VQ_VAE
+
+import argparse
+import os
+import random
+import shutil
+import time
+import warnings
+
 import torch as t
+import torch.nn as nn
+import torch.nn.parallel
+import torch.backends.cudnn as cudnn
+import torch.distributed as dist
+import torch.optim
+import torch.utils.data
+import torch.utils.data.distributed
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+import torchvision.models as models
+import pyddl
 from torch.utils.data import TensorDataset
 from torch.utils.tensorboard import SummaryWriter
-import logging
 import glob
 
+from dl_training.dynamorph.vqvae.vq_vae_supp import reorder_with_trajectories, vae_preprocess
+import numpy as np
+import pickle
+import logging
 
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format="%(asctime)s [%(levelname)s] %(message)s",
-#     handlers=[
-#         logging.FileHandler("debug.log"),
-#         logging.StreamHandler()
-#     ]
-# )
 log = logging.getLogger(__name__)
 
 
@@ -34,7 +59,7 @@ def train(model,
           n_epochs=10,
           lr=0.001,
           batch_size=16,
-          distributed=False,
+          # device='cuda:0',
           shuffle_data=False,
           transform=True,
           seed=None):
@@ -42,13 +67,13 @@ def train(model,
 
     Args:
         model (nn.Module): autoencoder model
-        dataset (TensorDataset): dataset of training inputs
+        dataset (DataLoader): dataset of training inputs
         output_dir (str): path for writing model saves and loss curves
         use_channels (list, optional): list of channel indices used for model
             training, by default all channels will be used
         relation_mat (scipy csr matrix or None, optional): if given, sparse
             matrix of pairwise relations
-        mask (TensorDataset or None, optional): if given, dataset of training
+        mask (DataLoader or None, optional): if given, dataset of training
             sample weight masks
         n_epochs (int, optional): number of epochs
         lr (float, optional): learning rate
@@ -72,7 +97,7 @@ def train(model,
     n_channels = len(use_channels)
     assert n_channels == model.num_inputs
 
-    model = model.to(device)
+    # model = model.to(device)
     optimizer = t.optim.Adam(model.parameters(), lr=lr, betas=(.9, .999))
     model.zero_grad()
 
@@ -98,7 +123,7 @@ def train(model,
             batch = dataset[sample_ids_batch][0]
             assert len(batch.shape) == 5, "Input should be formatted as (batch, c, z, x, y)"
             batch = batch[:, np.array(use_channels)].permute(0, 2, 1, 3, 4).reshape((-1, n_channels, x_size, y_size))
-            batch = batch.to(device)
+            # batch = batch.to(device)
 
             # Data augmentation
             if transform:
@@ -123,7 +148,7 @@ def train(model,
                 batch_mask = mask[sample_ids_batch][0][:, 1:2]  # Hardcoded second slice (large mask)
                 batch_mask = (batch_mask + 1.) / 2.  # Add a baseline weight
                 batch_mask = batch_mask.permute(0, 2, 1, 3, 4).reshape((-1, 1, x_size, y_size))
-                batch_mask = batch_mask.to(device)
+                # batch_mask = batch_mask.to(device)
             else:
                 batch_mask = None
 
@@ -155,12 +180,42 @@ def train(model,
     return model
 
 
-def main(args_):
+def main_worker(args_):
+
+    # ===== from ibm ddlrun docs =======
+    args_.distributed = args_.world_size > 1
+    if args_.distributed:
+        # DDL will set the world_rank & global_rank among all process
+        dist.init_process_group(backend=args_.dist_backend, init_method=args_.dist_url)
+        local_rank = pyddl.local_rank()
+
+    # create model
+    model1 = VQ_VAE(num_inputs=1, weight_matching=0., channel_var=np.ones((1,)))
+    model2 = VQ_VAE(num_inputs=1, weight_matching=0.0005, channel_var=np.ones((1,)))
+
+    if args_.distributed:
+        # DDL will set the single device scope
+        model1.cuda()
+        model1 = torch.nn.parallel.DistributedDataParallel(model1)
+        model2.cuda()
+        model2 = torch.nn.parallel.DistributedDataParallel(model2)
+    else:
+        # DataParallel will divide and allocate batch_size to all available GPUs
+        if args_.arch.startswith('alexnet') or args_.arch.startswith('vgg'):
+            model1.features = torch.nn.DataParallel(model1.features)
+            model1.cuda()
+            model2.features = torch.nn.DataParallel(model2.features)
+            model2.cuda()
+        else:
+            model1 = torch.nn.DataParallel(model1).cuda()
+            model2 = torch.nn.DataParallel(model2).cuda()
+
+    # ==== end ibm stuff ===========
 
     ### Settings ###
     channels = args_.channels
     model_output_dir = args_.model_output_dir
-    device = args_.device
+    # device = args_.device
     project_dir = args_.project_dir
 
     # channels = [1]
@@ -190,29 +245,48 @@ def main(args_):
     dataset = TensorDataset(t.from_numpy(dataset).float())
     dataset_mask = TensorDataset(t.from_numpy(dataset_mask).float())
 
+    # =========== create a loader as per IBM docs ==============
+
+    if args_.distributed:
+        train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+        train_sampler_mask = torch.utils.data.distributed.DistributedSampler(dataset_mask)
+    else:
+        train_sampler = None
+        train_sampler_mask = None
+
+    train_loader = torch.utils.data.DataLoader(
+        dataset, batch_size=args_.batch_size, shuffle=(train_sampler is None),
+        num_workers=args_.workers, pin_memory=True, sampler=train_sampler)
+
+    train_mask_loader = torch.utils.data.DataLoader(
+        dataset, batch_size=args_.batch_size, shuffle=(train_sampler_mask is None),
+        num_workers=args_.workers, pin_memory=True, sampler=train_sampler_mask)
+
+    # =========================================================
+
     os.makedirs(os.path.join(model_output_dir, "stage1"), exist_ok=True)
     os.makedirs(os.path.join(model_output_dir, "stage2"), exist_ok=True)
 
     # Stage 1 training
     log.info("TRAINING: STARTING STAGE 1")
-    model = VQ_VAE(num_inputs=1, weight_matching=0., channel_var=np.ones((1,)), device=device)
-    model = model.to(device)
-    model = train(model,
-                  dataset,
-                  os.path.join(model_output_dir, "stage1"),
-                  relation_mat=relation_mat,
-                  mask=dataset_mask,
-                  n_epochs=100,
-                  # n_epochs=10,
-                  lr=0.0001,
-                  batch_size=128,
-                  device=device,
-                  shuffle_data=False,
-                  transform=True)
+    # model = VQ_VAE(num_inputs=1, weight_matching=0., channel_var=np.ones((1,)), device=device)
+    # model = model.to(device)
+    model1 = train(model1,
+                   train_loader,
+                   os.path.join(model_output_dir, "stage1"),
+                   relation_mat=relation_mat,
+                   mask=train_mask_loader,
+                   n_epochs=100,
+                   # n_epochs=10,
+                   lr=0.0001,
+                   batch_size=128,
+                   # device=device,
+                   shuffle_data=False,
+                   transform=True)
 
     log.info("TRAINING: STARTING STAGE 2")
-    model = VQ_VAE(num_inputs=1, weight_matching=0.0005, channel_var=np.ones((1,)), device=device)
-    model = model.to(device)
+    # model = VQ_VAE(num_inputs=1, weight_matching=0.0005, channel_var=np.ones((1,)), device=device)
+    # model = model.to(device)
 
     # get the last saved epoch.  on IBM, use max(). on OSX use min()
     # s1_epochs = glob.glob(os.path.join(model_output_dir, "stage1", "/*"))
@@ -220,19 +294,19 @@ def main(args_):
     last_epoch = max(s1_epochs, key=os.path.getctime)
 
     # model.load_state_dict(t.load(os.path.join(model_output_dir, "stage1", "model_epoch99.pt")))
-    model.load_state_dict(t.load(last_epoch))
-    model = train(model,
-                  dataset,
-                  os.path.join(model_output_dir, "stage2"),
-                  relation_mat=relation_mat,
-                  mask=dataset_mask,
-                  n_epochs=400,
-                  # n_epochs=40,
-                  lr=0.0001,
-                  batch_size=128,
-                  device=device,
-                  shuffle_data=False,
-                  transform=True)
+    model2.load_state_dict(t.load(last_epoch))
+    model2 = train(model2,
+                   dataset,
+                   os.path.join(model_output_dir, "stage2"),
+                   relation_mat=relation_mat,
+                   mask=dataset_mask,
+                   n_epochs=400,
+                   # n_epochs=40,
+                   lr=0.0001,
+                   batch_size=128,
+                   # device=device,
+                   shuffle_data=False,
+                   transform=True)
     pass
 
 
