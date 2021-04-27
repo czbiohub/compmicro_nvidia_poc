@@ -71,6 +71,8 @@ if __name__ == "__main__":
     if os.getenv('OMPI_COMM_WORLD_SIZE'):
         args.world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE'))
 
+    # log.info(f"WORLD SIZE = {os.getenv('OMPI_COMM_WORLD_SIZE')}")
+
     start = datetime.now()
 
     # start logs
@@ -85,6 +87,10 @@ if __name__ == "__main__":
     # logging.basicConfig(filename=f"{args.model_output_dir}/{start.strftime('%Y_%m_%d_%H_%M')}")
     log = logging.getLogger(__name__)
     log.setLevel(20)
+
+    log.info(f"WORLD SIZE = {os.getenv('OMPI_COMM_WORLD_SIZE')}")
+    log.info(f"=====================test ======================")
+
     log.info(f"================ BEGIN vq-vae training ============== ")
     log.info(f"================== {start.strftime('%Y_%m_%d_%H_%M')} ================= ")
 
