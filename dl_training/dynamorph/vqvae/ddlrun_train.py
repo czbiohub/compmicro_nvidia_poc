@@ -93,6 +93,8 @@ def train(model,
         nn.Module: trained model
 
     """
+    model.train()
+
     if not seed is None:
         np.random.seed(seed)
         t.manual_seed(seed)
@@ -221,7 +223,7 @@ def main_worker(args_):
     # ==== end ibm stuff ===========
 
     ### Settings ###
-    channels = args_.channels
+    # channels = args_.channels
     model_output_dir = args_.model_output_dir
     # device = args_.device
     project_dir = args_.project_dir
@@ -254,10 +256,17 @@ def main_worker(args_):
     # dataset_mask = TensorDataset(t.from_numpy(dataset_mask).float())
 
     dataset = datasets.DatasetFolder(
-        root='PATH',
+        root=os.path.join(project_dir, "JUNE", "raw_patches"),
         loader=npy_loader,
         extensions=['.npy']
     )
+
+    dataset_mask = datasets.DatasetFolder(
+        root=os.path.join(project_dir, "JUNE", "raw_masks"),
+        loader=npy_loader,
+        extensions=['.npy']
+    )
+    relation_mat = np.load(os.path.join(project_dir, "JUNE", "relation_mat.npy"))
 
     # =========== create a loader as per IBM docs ==============
 
@@ -267,6 +276,8 @@ def main_worker(args_):
     else:
         train_sampler = None
         train_sampler_mask = None
+
+    args_.batch_size = 128
 
     train_loader = torch.utils.data.DataLoader(
         dataset, batch_size=args_.batch_size, shuffle=(train_sampler is None),
