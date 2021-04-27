@@ -67,6 +67,8 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
+    args.workers = 4
+
     # set world_size retrieved from MPI
     if os.getenv('OMPI_COMM_WORLD_SIZE'):
         args.world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE'))

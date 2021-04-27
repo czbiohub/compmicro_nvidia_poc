@@ -256,17 +256,17 @@ def main_worker(args_):
     # dataset_mask = TensorDataset(t.from_numpy(dataset_mask).float())
 
     dataset = datasets.DatasetFolder(
-        root=os.path.join(project_dir, "JUNE", "raw_patches"),
+        root=project_dir+"/JUNE"+"/raw_patches",
         loader=npy_loader,
-        extensions=['.npy']
+        extensions='.npy'
     )
 
     dataset_mask = datasets.DatasetFolder(
-        root=os.path.join(project_dir, "JUNE", "raw_masks"),
+        root=project_dir+"/JUNE"+"/raw_masks",
         loader=npy_loader,
-        extensions=['.npy']
+        extensions='.npy'
     )
-    relation_mat = np.load(os.path.join(project_dir, "JUNE", "relation_mat.npy"))
+    relation_mat = np.load(os.path.join(project_dir, "JUNE", "raw_patches", "relation_mat.npy"), allow_pickle=True)
 
     # =========== create a loader as per IBM docs ==============
 
