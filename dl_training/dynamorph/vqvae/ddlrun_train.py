@@ -50,6 +50,11 @@ import logging
 log = logging.getLogger(__name__)
 
 
+def npy_loader(path):
+    sample = torch.from_numpy(np.load(path))
+    return sample
+
+
 def train(model,
           dataset,
           output_dir,
@@ -182,6 +187,9 @@ def train(model,
 
 def main_worker(args_):
 
+    args_.dist_backend = 'ddl'
+    args_.dist_url = 'env://'
+
     # ===== from ibm ddlrun docs =======
     args_.distributed = args_.world_size > 1
     if args_.distributed:
@@ -224,10 +232,10 @@ def main_worker(args_):
 
     ### Prepare Data ###
     log.info("LOADING FILES")
-    fs = pickle.load(open(os.path.join(project_dir, 'JUNE', 'raw', 'D_file_paths.pkl'), 'rb'))
-    dataset = pickle.load(open(os.path.join(project_dir, 'JUNE', 'raw', 'D_static_patches.pkl'), 'rb'))
-    dataset_mask = pickle.load(open(os.path.join(project_dir, 'JUNE', 'raw', 'D_static_patches_mask.pkl'), 'rb'))
-    relations = pickle.load(open(os.path.join(project_dir, 'JUNE', 'raw', 'D_static_patches_relations.pkl'), 'rb'))
+    # fs = pickle.load(open(os.path.join(project_dir, 'JUNE', 'raw', 'D_file_paths.pkl'), 'rb'))
+    # dataset = pickle.load(open(os.path.join(project_dir, 'JUNE', 'raw', 'D_static_patches.pkl'), 'rb'))
+    # dataset_mask = pickle.load(open(os.path.join(project_dir, 'JUNE', 'raw', 'D_static_patches_mask.pkl'), 'rb'))
+    # relations = pickle.load(open(os.path.join(project_dir, 'JUNE', 'raw', 'D_static_patches_relations.pkl'), 'rb'))
 
     # path = '/gpfs/CompMicro/projects/dynamorph/microglia/raw_for_segmentation'
     # fs = pickle.load(open(os.path.join(path, 'JUNE', 'raw', 'D_file_paths.pkl'), 'rb'))
@@ -236,14 +244,20 @@ def main_worker(args_):
     # relations = pickle.load(open(os.path.join(path, 'JUNE', 'raw', 'D_static_patches_relations.pkl'), 'rb'))
 
     # Reorder
-    log.info("PREPARING LOADED DATA")
-    dataset, relation_mat, inds_in_order = reorder_with_trajectories(dataset, relations, seed=123)
-    fs = [fs[i] for i in inds_in_order]
-    dataset_mask = dataset_mask[np.array(inds_in_order)]
-    dataset = vae_preprocess(dataset, use_channels=channels)
+    # log.info("PREPARING LOADED DATA")
+    # dataset, relation_mat, inds_in_order = reorder_with_trajectories(dataset, relations, seed=123)
+    # fs = [fs[i] for i in inds_in_order]
+    # dataset_mask = dataset_mask[np.array(inds_in_order)]
+    # dataset = vae_preprocess(dataset, use_channels=channels)
+    #
+    # dataset = TensorDataset(t.from_numpy(dataset).float())
+    # dataset_mask = TensorDataset(t.from_numpy(dataset_mask).float())
 
-    dataset = TensorDataset(t.from_numpy(dataset).float())
-    dataset_mask = TensorDataset(t.from_numpy(dataset_mask).float())
+    dataset = datasets.DatasetFolder(
+        root='PATH',
+        loader=npy_loader,
+        extensions=['.npy']
+    )
 
     # =========== create a loader as per IBM docs ==============
 
