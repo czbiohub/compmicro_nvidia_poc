@@ -4,6 +4,7 @@ import torch as t
 import torch.nn as nn
 import torch.nn.functional as F
 
+import pdb
 
 CHANNEL_VAR = np.array([1., 1.])
 CHANNEL_MAX = 65535.
@@ -36,8 +37,11 @@ class VectorQuantizer(nn.Module):
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
         self.commitment_cost = commitment_cost
-        if device is not None:
-            self.device = device
+        self.device = device if device else None
+        # if device is not None:
+        #     self.device = device
+        # else:
+        #     self.device = None
         self.w = nn.Embedding(num_embeddings, embedding_dim)
 
     def forward(self, inputs):
@@ -70,7 +74,7 @@ class VectorQuantizer(nn.Module):
         if self.device is not None:
             encoding_onehot = t.zeros(encoding_indices.flatten().shape[0], self.num_embeddings).to(self.device)
         else:
-            encoding_onehot = t.zeros(encoding_indices.flatten().shape[0], self.num_embeddings)
+            encoding_onehot = t.zeros(encoding_indices.flatten().shape[0], self.num_embeddings).cuda()
         encoding_onehot.scatter_(1, encoding_indices.flatten().unsqueeze(1), 1)
         avg_probs = t.mean(encoding_onehot, 0)
         perplexity = t.exp(-t.sum(avg_probs*t.log(avg_probs + 1e-10)))
@@ -252,6 +256,7 @@ class VQ_VAE(nn.Module):
         decoded = self.dec(z_after)
         if batch_mask is None:
             batch_mask = t.ones_like(inputs)
+        # pdb.set_trace()
         recon_loss = t.mean(F.mse_loss(decoded * batch_mask, inputs * batch_mask, reduction='none') / self.channel_var)
         total_loss = self.weight_recon * recon_loss + self.weight_commitment * c_loss
         time_matching_loss = 0.

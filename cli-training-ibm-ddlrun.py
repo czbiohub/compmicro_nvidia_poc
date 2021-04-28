@@ -68,6 +68,9 @@ if __name__ == "__main__":
     args = parse_args()
 
     args.workers = 4
+    args.batch_size = 128
+    args.stage1_epochs = 10
+    args.stage2_epochs = 40
 
     # set world_size retrieved from MPI
     if os.getenv('OMPI_COMM_WORLD_SIZE'):
