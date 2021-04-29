@@ -180,8 +180,6 @@ def train(model,
         else:
             batch_relation_mat = None
 
-        # pdb.set_trace()
-
         # Reconstruction mask
         # recon_loss is computed only on those regions within the supplied mask
         if mask_loader and mask is not None:
@@ -194,17 +192,12 @@ def train(model,
 
         batch = batch.float()
         batch_mask = batch_mask.float()
-        batch = batch.cuda()
-        batch_mask = batch_mask.cuda()
 
         # providing a sample from the loader, time relation matrix, and corresponding sample from masks
-        # t.cuda.synchronize()
         _, loss_dict = model(batch,
                              time_matching_mat=batch_relation_mat,
                              batch_mask=None)
-        # t.cuda.synchronize()
         loss_dict['total_loss'].backward()
-        # t.cuda.synchronize()
         optimizer.step()
         model.zero_grad()
 
