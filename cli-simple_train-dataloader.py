@@ -1,5 +1,5 @@
 # import simple_train.main as main
-from dl_training.dynamorph.vqvae.simple_train import main
+from dl_training.dynamorph.vqvae.simple_train_dataloader import main_worker
 import argparse
 import logging
 from datetime import datetime
@@ -54,6 +54,11 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
+    args.workers = 4
+    args.batch_size = 128
+    args.stage1_epochs = 100
+    args.stage2_epochs = 400
+
     start = datetime.now()
 
     # start logs
@@ -71,7 +76,7 @@ if __name__ == "__main__":
     log.info(f"================ BEGIN vq-vae training ============== ")
     log.info(f"================== {start.strftime('%Y_%m_%d_%H_%M')} ================= ")
 
-    main(args)
+    main_worker(args)
 
     stop = datetime.now()
     log.info(f"================ END vq-vae training ============== ")

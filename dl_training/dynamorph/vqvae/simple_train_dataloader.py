@@ -192,13 +192,13 @@ def train(model,
 
         batch = batch.float()
         batch_mask = batch_mask.float()
-        batch.to(device)
-        batch.to(device)
+        batch = batch.to(device)
+        batch_mask = batch_mask.to(device)
 
         # providing a sample from the loader, time relation matrix, and corresponding sample from masks
         _, loss_dict = model(batch,
                              time_matching_mat=batch_relation_mat,
-                             batch_mask=batch_mask)
+                             batch_mask=None)
         loss_dict['total_loss'].backward()
         optimizer.step()
         model.zero_grad()
@@ -222,8 +222,8 @@ def main_worker(args_):
         device = None
 
     # create model
-    model1 = VQ_VAE(num_inputs=1, weight_matching=0., channel_var=np.ones((1,)))
-    model2 = VQ_VAE(num_inputs=1, weight_matching=0.0005, channel_var=np.ones((1,)))
+    model1 = VQ_VAE(num_inputs=1, weight_matching=0., channel_var=np.ones((1,)), device=device)
+    model2 = VQ_VAE(num_inputs=1, weight_matching=0.0005, channel_var=np.ones((1,)), device=device)
 
     model1.to(device)
     model2.to(device)
@@ -292,7 +292,7 @@ def main_worker(args_):
                           train_loader,
                           output_dir,
                           # relation_mat=relation_mat,
-                          # mask_loader=train_mask_loader,
+                          mask_loader=train_mask_loader,
                           lr=0.0001,
                           batch_size=128,
                           shuffle_data=False,
@@ -309,10 +309,8 @@ def main_worker(args_):
         log.info('\tepoch %d' % epoch)
         log.info('\t'.join(['{}:{:0.4f}  '.format(key, loss) for key, loss in mean_loss.items()]))
 
-        # only master process should save checkpoints.
-        if torch.distributed.get_rank() == 0:
-            log.info(f'\t saving epoch {epoch}')
-            t.save(model1.state_dict(), os.path.join(output_dir, 'model_epoch%d.pt' % epoch))
+        log.info(f'\t saving epoch {epoch}')
+        t.save(model1.state_dict(), os.path.join(output_dir, 'model_epoch%d.pt' % epoch))
 
     writer.close()
 
@@ -343,7 +341,7 @@ def main_worker(args_):
                           train_loader,
                           os.path.join(model_output_dir, "stage2"),
                           # relation_mat=relation_mat,
-                          # mask_loader=train_mask_loader,
+                          mask_loader=train_mask_loader,
                           lr=0.0001,
                           batch_size=128,
                           shuffle_data=False,
@@ -360,9 +358,8 @@ def main_worker(args_):
         log.info('\tepoch %d' % epoch)
         log.info('\t'.join(['{}:{:0.4f}  '.format(key, loss) for key, loss in mean_loss.items()]))
 
-        if torch.distributed.get_rank() == 0:
-            log.info(f'\t saving epoch {epoch}')
-            t.save(model2.state_dict(), os.path.join(output_dir, 'model_epoch%d.pt' % epoch))
+        log.info(f'\t saving epoch {epoch}')
+        t.save(model2.state_dict(), os.path.join(output_dir, 'model_epoch%d.pt' % epoch))
     writer.close()
 
 
