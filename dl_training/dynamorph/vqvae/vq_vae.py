@@ -256,7 +256,6 @@ class VQ_VAE(nn.Module):
         decoded = self.dec(z_after)
         if batch_mask is None:
             batch_mask = t.ones_like(inputs)
-        # pdb.set_trace()
         recon_loss = t.mean(F.mse_loss(decoded * batch_mask, inputs * batch_mask, reduction='none') / self.channel_var)
         total_loss = self.weight_recon * recon_loss + self.weight_commitment * c_loss
         time_matching_loss = 0.

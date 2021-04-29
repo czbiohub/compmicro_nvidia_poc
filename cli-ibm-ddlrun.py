@@ -12,19 +12,6 @@ import logging
 from datetime import datetime
 import sys, os
 
-import torch
-import torch.nn as nn
-import torch.nn.parallel
-import torch.backends.cudnn as cudnn
-import torch.distributed as dist
-import torch.optim
-import torch.utils.data
-import torch.utils.data.distributed
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-import torchvision.models as models
-import pyddl
-
 """
 Dynamorph -- microglia -- VQ-VAE training
 requirements:
@@ -67,10 +54,11 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    args.workers = 4
+    args.workers = 1
     args.batch_size = 128
-    args.stage1_epochs = 10
-    args.stage2_epochs = 40
+    args.stage1_epochs = 100
+    args.stage2_epochs = 400
+    args.gpu = 'cuda:0'
 
     # set world_size retrieved from MPI
     if os.getenv('OMPI_COMM_WORLD_SIZE'):

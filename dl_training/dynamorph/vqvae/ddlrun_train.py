@@ -192,16 +192,19 @@ def train(model,
         else:
             batch_mask = None
 
-        # pdb.set_trace()
-
         batch = batch.float()
         batch_mask = batch_mask.float()
+        batch = batch.cuda()
+        batch_mask = batch_mask.cuda()
 
         # providing a sample from the loader, time relation matrix, and corresponding sample from masks
+        # t.cuda.synchronize()
         _, loss_dict = model(batch,
                              time_matching_mat=batch_relation_mat,
                              batch_mask=None)
+        # t.cuda.synchronize()
         loss_dict['total_loss'].backward()
+        # t.cuda.synchronize()
         optimizer.step()
         model.zero_grad()
 
@@ -331,7 +334,8 @@ def main_worker(args_):
         log.info('\t'.join(['{}:{:0.4f}  '.format(key, loss) for key, loss in mean_loss.items()]))
 
         # only master process should save checkpoints.
-        if torch.distributed.get_rank() == '0':
+        if torch.distributed.get_rank() == 0:
+            log.info(f'\t saving epoch {epoch}')
             t.save(model1.state_dict(), os.path.join(output_dir, 'model_epoch%d.pt' % epoch))
 
     writer.close()
@@ -380,7 +384,8 @@ def main_worker(args_):
         log.info('\tepoch %d' % epoch)
         log.info('\t'.join(['{}:{:0.4f}  '.format(key, loss) for key, loss in mean_loss.items()]))
 
-        if torch.distributed.get_rank() == '0':
+        if torch.distributed.get_rank() == 0:
+            log.info(f'\t saving epoch {epoch}')
             t.save(model2.state_dict(), os.path.join(output_dir, 'model_epoch%d.pt' % epoch))
     writer.close()
 
