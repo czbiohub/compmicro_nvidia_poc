@@ -2,4 +2,8 @@
 
 # runs training with arguments
 
-python cli-training.py -p /gpfs/CompMicro/projects/nVidia_POC/dynamorph/microglia -o /gpfs/CompMicro/projects/nVidia_POC/dynamorph/microglia/JUNE/nvidia-poc_4GPU -c 1 -d "cuda:3"
+python cli-simple_train.py \
+-p /gpfs/CompMicro/projects/nVidia_POC/dynamorph/microglia \
+-o /gpfs/CompMicro/projects/nVidia_POC/dynamorph/microglia/JUNE/nvidia-poc-1GPU-simple \
+-c 1 \
+-d "cuda:3"

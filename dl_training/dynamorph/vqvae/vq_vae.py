@@ -38,10 +38,6 @@ class VectorQuantizer(nn.Module):
         self.num_embeddings = num_embeddings
         self.commitment_cost = commitment_cost
         self.device = device if device else None
-        # if device is not None:
-        #     self.device = device
-        # else:
-        #     self.device = None
         self.w = nn.Embedding(num_embeddings, embedding_dim)
 
     def forward(self, inputs):

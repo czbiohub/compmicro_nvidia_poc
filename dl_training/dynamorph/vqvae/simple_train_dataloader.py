@@ -95,7 +95,7 @@ def train(model,
           shuffle_data=False,
           transform=True,
           seed=None,
-          epoch=0):
+          device=None):
 
     model.train()
 
@@ -173,7 +173,7 @@ def train(model,
         sample_ids_batch = [int(os.path.basename(fn).split('.')[0]) for fn in sample_fn_batch]
 
         # Relation (adjacent frame, same trajectory)
-        if not relation_mat is None:
+        if relation_mat is not None:
             batch_relation_mat = relation_mat[sample_ids_batch][:, sample_ids_batch]
             batch_relation_mat = batch_relation_mat.todense()
             # batch_relation_mat = t.from_numpy(batch_relation_mat).float().to(device)
@@ -192,11 +192,13 @@ def train(model,
 
         batch = batch.float()
         batch_mask = batch_mask.float()
+        batch.to(device)
+        batch.to(device)
 
         # providing a sample from the loader, time relation matrix, and corresponding sample from masks
         _, loss_dict = model(batch,
                              time_matching_mat=batch_relation_mat,
-                             batch_mask=None)
+                             batch_mask=batch_mask)
         loss_dict['total_loss'].backward()
         optimizer.step()
         model.zero_grad()
@@ -214,36 +216,17 @@ def train(model,
 
 def main_worker(args_):
 
-    args_.dist_backend = 'ddl'
-    args_.dist_url = 'env://'
-
-    # ===== from ibm ddlrun docs =======
-    args_.distributed = args_.world_size > 1
-    if args_.distributed:
-        # DDL will set the world_rank & global_rank among all process
-        dist.init_process_group(backend=args_.dist_backend, init_method=args_.dist_url)
-        local_rank = pyddl.local_rank()
+    if args_.device:
+        device = args_.device
+    else:
+        device = None
 
     # create model
     model1 = VQ_VAE(num_inputs=1, weight_matching=0., channel_var=np.ones((1,)))
     model2 = VQ_VAE(num_inputs=1, weight_matching=0.0005, channel_var=np.ones((1,)))
 
-    if args_.distributed:
-        # DDL will set the single device scope
-        model1.cuda()
-        model1 = torch.nn.parallel.DistributedDataParallel(model1)
-        model2.cuda()
-        model2 = torch.nn.parallel.DistributedDataParallel(model2)
-    else:
-        # DataParallel will divide and allocate batch_size to all available GPUs
-        if args_.arch.startswith('alexnet') or args_.arch.startswith('vgg'):
-            model1.features = torch.nn.DataParallel(model1.features)
-            model1.cuda()
-            model2.features = torch.nn.DataParallel(model2.features)
-            model2.cuda()
-        else:
-            model1 = torch.nn.DataParallel(model1).cuda()
-            model2 = torch.nn.DataParallel(model2).cuda()
+    model1.to(device)
+    model2.to(device)
 
     # ==== end ibm stuff ===========
 
@@ -277,12 +260,12 @@ def main_worker(args_):
 
     # =========== create a loader as per IBM docs ==============
 
-    if args_.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
-        train_sampler_mask = torch.utils.data.distributed.DistributedSampler(dataset_mask)
-    else:
-        train_sampler = None
-        train_sampler_mask = None
+    # if args_.distributed:
+    #     train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+    #     train_sampler_mask = torch.utils.data.distributed.DistributedSampler(dataset_mask)
+    # else:
+    train_sampler = None
+    train_sampler_mask = None
 
     # =========================================================
 
@@ -309,12 +292,12 @@ def main_worker(args_):
                           train_loader,
                           output_dir,
                           # relation_mat=relation_mat,
-                          mask_loader=train_mask_loader,
+                          # mask_loader=train_mask_loader,
                           lr=0.0001,
                           batch_size=128,
                           shuffle_data=False,
                           transform=True,
-                          )
+                          device=device)
 
         # shuffle samples ids at the end of the epoch
         # if shuffle_data:
@@ -360,12 +343,12 @@ def main_worker(args_):
                           train_loader,
                           os.path.join(model_output_dir, "stage2"),
                           # relation_mat=relation_mat,
-                          mask_loader=train_mask_loader,
+                          # mask_loader=train_mask_loader,
                           lr=0.0001,
                           batch_size=128,
                           shuffle_data=False,
                           transform=True,
-                          )
+                          device=device)
 
         # shuffle samples ids at the end of the epoch
         # if shuffle_data:
