@@ -6,11 +6,13 @@ $CONDA_PREFIX/lib/python$PY_VER/site-packages/torch/examples/ddl_examples/mnist/
 and data from dynamorph vq-vae model
 
 """
-from dl_training.dynamorph.vqvae.ddlrun_train import main_worker
+from dl_training.dynamorph.vqvae.ddlrun_train_horovod import main_worker
 import argparse
 import logging
 from datetime import datetime
 import sys, os
+import horovod.torch as hvd
+
 
 """
 Dynamorph -- microglia -- VQ-VAE training
@@ -58,6 +60,8 @@ if __name__ == "__main__":
     args.batch_size = 128
     args.stage1_epochs = 100
     args.stage2_epochs = 400
+    args.batches_per_allreduce = 1
+    args.distributed = True
     # args.gpu = 'cuda:0'
 
     # set world_size retrieved from MPI
