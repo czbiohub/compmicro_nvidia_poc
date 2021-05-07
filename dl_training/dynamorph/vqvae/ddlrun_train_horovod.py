@@ -64,8 +64,12 @@ def train(model,
     for i, (patch, mask) in enumerate(zip(train_loader, mask_loader)):
         # patch and mask are tuples of shape (image_batch, class, filename_batch)
 
+        patch_data = patch[0]
+        mask_data = mask[0]
+        patch_fn = patch[2]
+        mask_fn = mask[2]
         if args_.cuda:
-            patch, mask = patch.cuda(), mask.cuda()
+            patch_data, mask_data = patch_data.cuda(), mask_data.cuda()
 
         # set number of channels to use
         use_channels = list(range(1))
@@ -75,17 +79,16 @@ def train(model,
         # =================================
         # The loader's batch size is batch_size * batches_per_allreduce
         # Split data into sub-batches of size batch_size in case batches_per_allreduce > 1
-        for sub_batch_idx in range(0, len(patch), args_.batch_size):
+        for sub_batch_idx in range(0, len(patch_data), args_.batch_size):
 
-            sub_patch = patch[0][i:i + args_.batch_size]
+            sub_patch = patch_data[i:i + args_.batch_size]
             batch = sub_patch[:, np.array(use_channels)].permute(0, 2, 1, 3, 4).reshape((-1, n_channels, x_size, y_size))
 
+            # todo: make sure the files in the batch are associated with the right indicies in the relation_mat
             # filename contains sample_id:
-            sample_fn_batch = patch[2]
-            sample_ids_batch = [int(os.path.basename(fn).split('.')[0]) for fn in sample_fn_batch]
-
+            sample_ids_batch = [int(os.path.basename(fn).split('.')[0]) for fn in patch_fn]
             # Relation (adjacent frame, same trajectory)
-            if not relation_mat is None:
+            if relation_mat is not None:
                 batch_relation_mat = relation_mat[sample_ids_batch][:, sample_ids_batch]
                 batch_relation_mat = batch_relation_mat.todense()
                 # batch_relation_mat = t.from_numpy(batch_relation_mat).float().to(device)
@@ -95,7 +98,7 @@ def train(model,
             # Reconstruction mask
             # recon_loss is computed only on those regions within the supplied mask
             if mask_loader and mask is not None:
-                sub_mask = mask[0][i:i + args_.batch_size]
+                sub_mask = mask_data[i:i + args_.batch_size]
                 batch_mask = sub_mask[:, 1:2]  # Hardcoded second slice (large mask)
                 batch_mask = (batch_mask + 1.) / 2.  # Add a baseline weight
                 batch_mask = batch_mask.permute(0, 2, 1, 3, 4).reshape((-1, 1, x_size, y_size))
@@ -138,7 +141,7 @@ def main_worker(args_):
     if args_.cuda:
         # Horovod: pin GPU to local rank.
         torch.cuda.set_device(hvd.local_rank())
-        torch.cuda.manual_seed(args_.seed)
+        # torch.cuda.manual_seed(args_.seed)
 
     cudnn.benchmark = True
 
@@ -163,7 +166,8 @@ def main_worker(args_):
             from torch.utils.tensorboard import SummaryWriter
         else:
             from tensorboardX import SummaryWriter
-        log_writer = SummaryWriter(args_.log_dir) if hvd.rank() == 0 else None
+        os.makedirs(os.path.join(args_.model_output_dir, 'logs'), exist_ok=True)
+        log_writer = SummaryWriter(os.path.join(args_.model_output_dir, 'logs')) if hvd.rank() == 0 else None
     except ImportError:
         log_writer = None
 
@@ -266,7 +270,7 @@ def main_worker(args_):
 
     # Horovod: broadcast parameters & optimizer state.
     hvd.broadcast_parameters(model1.state_dict(), root_rank=0)
-    hvd.broadcast_optimizer_state(optimizer1, root_rank=0)
+    # hvd.broadcast_optimizer_state(optimizer1, root_rank=0)
 
     output_dir = os.path.join(model_output_dir, "stage1")
     writer = SummaryWriter(output_dir)
@@ -317,7 +321,7 @@ def main_worker(args_):
 
     # Horovod: broadcast parameters & optimizer state.
     hvd.broadcast_parameters(model2.state_dict(), root_rank=0)
-    hvd.broadcast_optimizer_state(optimizer2, root_rank=0)
+    # hvd.broadcast_optimizer_state(optimizer2, root_rank=0)
 
     output_dir = os.path.join(model_output_dir, "stage2")
     writer = SummaryWriter(output_dir)
