@@ -56,19 +56,26 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    args.workers = 1
+    # system params
+    # args.workers = 1
+    args.cuda = True
+    args.fp16_allreduce = False
+    args.batches_per_allreduce = 1
+    args.use_adasum = False
+
+    # model params
     args.batch_size = 128
     args.stage1_epochs = 100
     args.stage2_epochs = 400
-    args.batches_per_allreduce = 1
-    args.distributed = True
-    # args.gpu = 'cuda:0'
+    args.base_lr = 0.0001
 
     # set world_size retrieved from MPI
-    if os.getenv('OMPI_COMM_WORLD_SIZE'):
-        args.world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE'))
+    # if os.getenv('OMPI_COMM_WORLD_SIZE'):
+    #     args.world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE'))
 
     # log.info(f"WORLD SIZE = {os.getenv('OMPI_COMM_WORLD_SIZE')}")
+
+    # ======= launch main worker  with logging =============
 
     start = datetime.now()
 

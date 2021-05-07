@@ -31,8 +31,10 @@ import torch.utils.data.distributed
 import torchvision.datasets as datasets
 from torch.utils.tensorboard import SummaryWriter
 import glob
+import math
 
 import horovod.torch as hvd
+from distutils.version import LooseVersion
 
 
 from dl_training.dynamorph.vqvae.utils import DatasetFolderWithPaths, npy_loader
@@ -46,110 +48,77 @@ def train(model,
           train_loader,
           optimizer,
           relation_mat=None,
-          mask_loader=None
+          mask_loader=None,
+          args_=None,
           ):
 
-    model.train()
-    model.zero_grad()
-
-    # todo, move batch handling outside of trainscript (shuffle, sample index)
-    # ===== this part can be handled by the Dataloder =====
-    # # determine number of batches
-    # n_samples = len(dataset)
-    # n_batches = int(np.ceil(n_samples / batch_size))
-    #
-    # # Declare sample indices and do an initial shuffle
-    # sample_ids = np.arange(n_samples)
-    # if shuffle_data:
-    #     np.random.shuffle(sample_ids)
+    # model.zero_grad()
+    optimizer.zero_grad()
+    mean_loss = {'recon_loss': [],
+                 'commitment_loss': [],
+                 'time_matching_loss': [],
+                 'total_loss': [],
+                 'perplexity': []}
     # =====================================================
 
-    # log.info('\tstart epoch %d' % epoch)
     for i, (patch, mask) in enumerate(zip(train_loader, mask_loader)):
         # patch and mask are tuples of shape (image_batch, class, filename_batch)
-        mean_loss = {'recon_loss': [],
-                     'commitment_loss': [],
-                     'time_matching_loss': [],
-                     'total_loss': [],
-                     'perplexity': []}
-        # for i in range(n_batches):
-        # pdb.set_trace()
 
-        # todo: can we hardcode this for now? (determine number of channels)
+        if args_.cuda:
+            patch, mask = patch.cuda(), mask.cuda()
+
         # set number of channels to use
-        # total_channels, n_z, x_size, y_size = patch[0][0].shape[-4:]
-        # if len(use_channels) == 0:
-        #     use_channels = list(range(total_channels))
-        # n_channels = len(use_channels)
-        # assert n_channels == model.num_inputs
-        # n_channels = model.num_inputs
         use_channels = list(range(1))
         n_channels = 1
         x_size, y_size = 128, 128
 
+        # =================================
+        # The loader's batch size is batch_size * batches_per_allreduce
+        # Split data into sub-batches of size batch_size in case batches_per_allreduce > 1
+        for sub_batch_idx in range(0, len(patch), args_.batch_size):
 
-        # todo: move this batch handling out (reshape using num channels)
-        # === data reshaping and batch extraction from greater list of the data -- handled by DataLoader already
-        # # Deal with last batch might < batch size
-        # sample_ids_batch = sample_ids[i * batch_size:min((i + 1) * batch_size, n_samples)]
-        # batch = dataset[sample_ids_batch][0]
-        # assert len(batch.shape) == 5, "Input should be formatted as (batch, c, z, x, y)"
-        batch = patch[0][:, np.array(use_channels)].permute(0, 2, 1, 3, 4).reshape((-1, n_channels, x_size, y_size))
-        # pdb.set_trace()
-        # ===============================================================
+            sub_patch = patch[0][i:i + args_.batch_size]
+            batch = sub_patch[:, np.array(use_channels)].permute(0, 2, 1, 3, 4).reshape((-1, n_channels, x_size, y_size))
 
-        # todo: move this transformation outside of train script
-        # should be moved to transforms.Compose with custom transform
-        #   - t.flip
-        #   - t.rot90
-        # this also can be defined at the level of DataLoading
-        # Data augmentation
-        # if transform:
-        #     for idx_in_batch in range(len(sample_ids_batch)):
-        #         img = batch[idx_in_batch]
-        #         flip_idx = np.random.choice([0, 1, 2])
-        #         if flip_idx != 0:
-        #             img = t.flip(img, dims=(flip_idx,))
-        #         rot_idx = int(np.random.choice([0, 1, 2, 3]))
-        #         batch[idx_in_batch] = t.rot90(img, k=rot_idx, dims=[1, 2])
+            # filename contains sample_id:
+            sample_fn_batch = patch[2]
+            sample_ids_batch = [int(os.path.basename(fn).split('.')[0]) for fn in sample_fn_batch]
 
-        # filename contains sample_id:
-        sample_fn_batch = patch[2]
-        sample_ids_batch = [int(os.path.basename(fn).split('.')[0]) for fn in sample_fn_batch]
+            # Relation (adjacent frame, same trajectory)
+            if not relation_mat is None:
+                batch_relation_mat = relation_mat[sample_ids_batch][:, sample_ids_batch]
+                batch_relation_mat = batch_relation_mat.todense()
+                # batch_relation_mat = t.from_numpy(batch_relation_mat).float().to(device)
+            else:
+                batch_relation_mat = None
 
-        # Relation (adjacent frame, same trajectory)
-        if not relation_mat is None:
-            batch_relation_mat = relation_mat[sample_ids_batch][:, sample_ids_batch]
-            batch_relation_mat = batch_relation_mat.todense()
-            # batch_relation_mat = t.from_numpy(batch_relation_mat).float().to(device)
-        else:
-            batch_relation_mat = None
+            # Reconstruction mask
+            # recon_loss is computed only on those regions within the supplied mask
+            if mask_loader and mask is not None:
+                sub_mask = mask[0][i:i + args_.batch_size]
+                batch_mask = sub_mask[:, 1:2]  # Hardcoded second slice (large mask)
+                batch_mask = (batch_mask + 1.) / 2.  # Add a baseline weight
+                batch_mask = batch_mask.permute(0, 2, 1, 3, 4).reshape((-1, 1, x_size, y_size))
+            else:
+                batch_mask = None
 
-        # Reconstruction mask
-        # recon_loss is computed only on those regions within the supplied mask
-        if mask_loader and mask is not None:
-            batch_mask = mask[0][:, 1:2]  # Hardcoded second slice (large mask)
-            batch_mask = (batch_mask + 1.) / 2.  # Add a baseline weight
-            batch_mask = batch_mask.permute(0, 2, 1, 3, 4).reshape((-1, 1, x_size, y_size))
-            # # batch_mask = batch_mask.to(device)
-        else:
-            batch_mask = None
+            batch = batch.float()
+            batch_mask = batch_mask.float()
 
-        batch = batch.float()
-        batch_mask = batch_mask.float()
+            # providing a sample from the loader, time relation matrix, and corresponding sample from masks
+            _, loss_dict = model(batch,
+                                 time_matching_mat=batch_relation_mat,
+                                 batch_mask=None)
+            # Average gradients among sub-batches
+            loss_dict['total_loss'].div_(math.ceil(float(len(patch)) / args_.batch_size))
+            loss_dict['total_loss'].backward()
+            optimizer.step()
+            model.zero_grad()
 
-        # providing a sample from the loader, time relation matrix, and corresponding sample from masks
-        _, loss_dict = model(batch,
-                             time_matching_mat=batch_relation_mat,
-                             batch_mask=None)
-        loss_dict['total_loss'].backward()
-        optimizer.step()
-        model.zero_grad()
-
-        for key, loss in loss_dict.items():
-            if not key in mean_loss:
-                mean_loss[key] = []
-            mean_loss[key].append(loss)
+            for key, loss in loss_dict.items():
+                if not key in mean_loss:
+                    mean_loss[key] = []
+                mean_loss[key].append(loss)
 
     # writer.close()
     return mean_loss
@@ -187,9 +156,17 @@ def main_worker(args_):
     # Horovod: print logs on the first worker.
     verbose = 1 if hvd.rank() == 0 else 0
 
-    torch.set_num_threads(4)
+    # Horovod: write TensorBoard logs on first worker.
+    try:
+        if LooseVersion(torch.__version__) >= LooseVersion('1.2.0'):
+            from torch.utils.tensorboard import SummaryWriter
+        else:
+            from tensorboardX import SummaryWriter
+        log_writer = SummaryWriter(args_.log_dir) if hvd.rank() == 0 else None
+    except ImportError:
+        log_writer = None
 
-    kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
+    ### MODEL CREATION ###
 
     # create model
     model1 = VQ_VAE(num_inputs=1, weight_matching=0., channel_var=np.ones((1,)))
@@ -200,14 +177,21 @@ def main_worker(args_):
 
     # By default, Adasum doesn't need scaling up learning rate.
     # For sum/average with gradient Accumulation: scale learning rate by batches_per_allreduce
-    lr_scaler = args_.batches_per_allreduce * hvd.size() if not args.use_adasum else 1
-
-    # If using GPU Adasum allreduce, scale learning rate by local_size.
-    if args_.use_adasum and hvd.nccl_built():
+    if args_.cuda and args_.use_adasum and hvd.nccl_built():
+        # If using GPU Adasum allreduce, scale learning rate by local_size.
         lr_scaler = args_.batches_per_allreduce * hvd.local_size()
+    elif not args_.use_adasum:
+        lr_scaler = args_.batches_per_allreduce * hvd.size()
+    else:
+        lr_scaler = 1
 
-    optimizer1 = t.optim.Adam(model1.parameters(), lr=0.0001, betas=(.9, .999))
-    optimizer2 = t.optim.Adam(model2.parameters(), lr=0.0001, betas=(.9, .999))
+    # Horovod: scale learning rate by the number of GPUs.
+    optimizer1 = t.optim.Adam(model1.parameters(),
+                              lr=(args_.base_lr * lr_scaler),
+                              betas=(.9, .999))
+    optimizer2 = t.optim.Adam(model2.parameters(),
+                              lr=(args_.base_lr * lr_scaler),
+                              betas=(.9, .999))
 
     # Horovod: (optional) compression algorithm.
     compression = hvd.Compression.fp16 if args_.fp16_allreduce else hvd.Compression.none
@@ -234,19 +218,14 @@ def main_worker(args_):
     #     optimizer.load_state_dict(checkpoint['optimizer'])
 
     ### Settings ###
-    # channels = args_.channels
     model_output_dir = args_.model_output_dir
-    # device = args_.device
     project_dir = args_.project_dir
-
-    # channels = [1]
-    # model_output_dir = "./retardance_only_model"
-    # device = "cuda:1"
 
     ### Prepare Data ###
     log.info("LOADING FILES")
 
     # ======= load data using pytorch systems ========
+    torch.set_num_threads(4)
     dataset = DatasetFolderWithPaths(
         root=project_dir+"/JUNE"+"/raw_patches",
         loader=npy_loader,
@@ -261,18 +240,12 @@ def main_worker(args_):
 
     relation_mat = np.load(os.path.join(project_dir, "JUNE", "raw_patches", "relation_mat.npy"), allow_pickle=True)
 
-    # =========== create a loader as per IBM docs ==============
-
-    if args_.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(dataset,
-                                                                        num_replicas=hvd.size(),
-                                                                        rank=hvd.rank())
-        train_sampler_mask = torch.utils.data.distributed.DistributedSampler(dataset_mask,
-                                                                             num_replicas=hvd.size(),
-                                                                             rank=hvd.rank())
-    else:
-        train_sampler = None
-        train_sampler_mask = None
+    # Horovod: use DistributedSampler to partition data among workers. Manually specify
+    # `num_replicas=hvd.size()` and `rank=hvd.rank()`.
+    train_sampler = torch.utils.data.distributed.DistributedSampler(
+        dataset, num_replicas=hvd.size(), rank=hvd.rank())
+    train_sampler_mask = torch.utils.data.distributed.DistributedSampler(
+        dataset_mask, num_replicas=hvd.size(), rank=hvd.rank())
 
     # =========================================================
 
@@ -282,13 +255,13 @@ def main_worker(args_):
     # ====================================
     log.info("TRAINING: STARTING STAGE 1")
 
-    train_loader = torch.utils.data.DataLoader(dataset,
-                                               batch_size=allreduce_batch_size,
-                                               sampler=train_sampler)
-
-    train_mask_loader = torch.utils.data.DataLoader(dataset_mask,
-                                                    batch_size=allreduce_batch_size,
-                                                    sampler=train_sampler_mask)
+    kwargs = {'num_workers': 4, 'pin_memory': True} if args_.cuda else {}
+    train_loader = torch.utils.data.DataLoader(
+        dataset, batch_size=allreduce_batch_size,
+        sampler=train_sampler, **kwargs)
+    train_mask_loader = torch.utils.data.DataLoader(
+        dataset_mask, batch_size=allreduce_batch_size,
+        sampler=train_sampler_mask, **kwargs)
 
     # Horovod: broadcast parameters & optimizer state.
     hvd.broadcast_parameters(model1.state_dict(), root_rank=0)
@@ -299,6 +272,7 @@ def main_worker(args_):
     log.info(f"\ttensorboard logs written to {output_dir}")
 
     for epoch in range(args_.stage1_epochs):
+        model1.train()
         train_sampler.set_epoch(epoch)
 
         mean_loss = train(model1,
@@ -306,11 +280,9 @@ def main_worker(args_):
                           optimizer1,
                           # relation_mat=relation_mat,
                           mask_loader=train_mask_loader,
+                          args_=args_
                           )
 
-        # shuffle samples ids at the end of the epoch
-        # if shuffle_data:
-        #     np.random.shuffle(sample_ids)
         for key, loss in mean_loss.items():
             mean_loss[key] = sum(loss) / len(loss) if len(loss) > 0 else -1.
             writer.add_scalar('Loss/' + key, mean_loss[key], epoch)
@@ -352,6 +324,9 @@ def main_worker(args_):
 
     model2.load_state_dict(t.load(last_epoch))
     for epoch in range(args_.stage2_epochs):
+        model2.train()
+        train_sampler.set_epoch(epoch)
+
         mean_loss = train(model2,
                           train_loader,
                           optimizer2,

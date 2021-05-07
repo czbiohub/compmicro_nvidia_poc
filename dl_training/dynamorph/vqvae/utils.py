@@ -1,5 +1,6 @@
 import torch
 import torchvision.datasets as datasets
+import numpy as np
 
 
 def npy_loader(path):
