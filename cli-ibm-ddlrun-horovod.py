@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
     # system params
     # args.workers = 1
-    args.cuda = True
+    args.no_cuda = False
     args.fp16_allreduce = False
     args.batches_per_allreduce = 1
     args.use_adasum = False

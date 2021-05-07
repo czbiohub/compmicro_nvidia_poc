@@ -133,6 +133,7 @@ def main_worker(args_):
     allreduce_batch_size = args_.batch_size * args_.batches_per_allreduce
 
     hvd.init()
+    torch.distributed.init_process_group('ddl', init_method='env://')
 
     if args_.cuda:
         # Horovod: pin GPU to local rank.
