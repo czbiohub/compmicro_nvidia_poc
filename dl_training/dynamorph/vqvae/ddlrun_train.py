@@ -18,69 +18,24 @@ disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
 
 """
 from .vq_vae import VQ_VAE
+import os
 import pdb
 
-import argparse
-import os
-import random
-import shutil
-import time
-import warnings
-
 import torch as t
-import torch.nn as nn
 import torch.nn.parallel
-import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-import torchvision.models as models
 import pyddl
-from torch.utils.data import TensorDataset
 from torch.utils.tensorboard import SummaryWriter
 import glob
 
-from dl_training.dynamorph.vqvae.vq_vae_supp import reorder_with_trajectories, vae_preprocess
+from dl_training.dynamorph.vqvae.utils import DatasetFolderWithPaths, npy_loader
 import numpy as np
-import pickle
 import logging
 
 log = logging.getLogger(__name__)
-
-
-def npy_loader(path):
-    sample = torch.from_numpy(np.load(path))
-    return sample
-
-
-class DatasetFolderWithPaths(datasets.DatasetFolder):
-    """ adapted from:
-    https://gist.github.com/andrewjong/6b02ff237533b3b2c554701fb53d5c4d
-    """
-
-    # override the __getitem__ method. this is the method that dataloader calls
-    def __getitem__(self, index):
-        # this is what ImageFolder normally returns
-        # original_tuple = super(DatasetFolderWithPaths, self).__getitem__(index)
-        # the image file path
-        # path = self.imgs[index][0]
-        # make a new tuple that includes original and the path
-        # tuple_with_path = (original_tuple + (path,))
-        # return tuple_with_path
-
-        # super(DatasetFolderWithPaths, self).__getitem__(index)
-
-        path, target = self.samples[index]
-        sample = self.loader(path)
-        if self.transform is not None:
-            sample = self.transform(sample)
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return sample, target, path
 
 
 def train(model,
