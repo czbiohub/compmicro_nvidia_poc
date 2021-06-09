@@ -11,7 +11,6 @@ import argparse
 import logging
 from datetime import datetime
 import sys, os
-import horovod.torch as hvd
 
 
 """
@@ -62,6 +61,7 @@ if __name__ == "__main__":
     args.fp16_allreduce = False
     args.batches_per_allreduce = 1
     args.use_adasum = False
+    args.distributed = True
 
     # model params
     args.batch_size = 128

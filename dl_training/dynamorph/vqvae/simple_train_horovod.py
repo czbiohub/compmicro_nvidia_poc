@@ -139,11 +139,12 @@ def main_worker(args_):
     allreduce_batch_size = args_.batch_size * args_.batches_per_allreduce
 
     hvd.init()
-    # torch.distributed.init_process_group('ddl', init_method='env://')
+    torch.distributed.init_process_group('nccl', rank=4)
 
     if args_.cuda:
         # Horovod: pin GPU to local rank.
         torch.cuda.set_device(hvd.local_rank())
+        print(f"this process's hvd rank = {hvd.local_rank()}")
         # torch.cuda.manual_seed(args_.seed)
 
     # cudnn.benchmark = True
@@ -258,12 +259,11 @@ def main_worker(args_):
     train_sampler_mask = torch.utils.data.distributed.DistributedSampler(
         dataset_mask, num_replicas=hvd.size(), rank=hvd.rank())
 
-    # =========================================================
-
     os.makedirs(os.path.join(model_output_dir, "stage1"), exist_ok=True)
     os.makedirs(os.path.join(model_output_dir, "stage2"), exist_ok=True)
 
-    # ====================================
+    # =========================================================
+    # =========================================================
     log.info("TRAINING: STARTING STAGE 1")
 
     kwargs = {'num_workers': 4, 'pin_memory': True} if args_.cuda else {}
@@ -308,7 +308,8 @@ def main_worker(args_):
 
     writer.close()
 
-    # ====================================
+    # =========================================================
+    # =========================================================
     log.info("TRAINING: STARTING STAGE 2")
 
     # get the last saved epoch.  on IBM, use max(). on OSX use min()

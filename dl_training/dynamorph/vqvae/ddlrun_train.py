@@ -171,6 +171,7 @@ def main_worker(args_):
 
     args_.dist_backend = 'ddl'
     args_.dist_url = 'env://'
+    args_.world_size = 4
 
     # ===== from ibm ddlrun docs =======
     args_.distributed = args_.world_size > 1

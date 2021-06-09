@@ -6,11 +6,14 @@ $CONDA_PREFIX/lib/python$PY_VER/site-packages/torch/examples/ddl_examples/mnist/
 and data from dynamorph vq-vae model
 
 """
-from dl_training.dynamorph.vqvae.ddlrun_train import main_worker
+from dl_training.dynamorph.vqvae.simple_train_horovod import main_worker
 import argparse
 import logging
 from datetime import datetime
 import sys, os
+import horovod.torch as hvd
+import torch.multiprocessing as mp
+
 
 """
 Dynamorph -- microglia -- VQ-VAE training
@@ -54,17 +57,35 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    args.workers = 4
+    # system params
+    os.environ['WORLD_SIZE'] = '4'
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = '631'
+
+    # args.workers = 1
+    args.no_cuda = False
+    args.fp16_allreduce = False
+    args.batches_per_allreduce = 1
+    args.use_adasum = False
+    args.distributed = True
+
+    # model params
     args.batch_size = 128
     args.stage1_epochs = 100
     args.stage2_epochs = 400
-    # args.gpu = 'cuda:0'
+    args.base_lr = 0.0001
+
+    mp.set_start_method("spawn")
+
+    hvd.init()
 
     # set world_size retrieved from MPI
-    if os.getenv('OMPI_COMM_WORLD_SIZE'):
-        args.world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE'))
+    # if os.getenv('OMPI_COMM_WORLD_SIZE'):
+    #     args.world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE'))
 
     # log.info(f"WORLD SIZE = {os.getenv('OMPI_COMM_WORLD_SIZE')}")
+
+    # ======= launch main worker  with logging =============
 
     start = datetime.now()
 
@@ -82,6 +103,8 @@ if __name__ == "__main__":
     log.setLevel(20)
 
     log.info(f"WORLD SIZE = {os.getenv('OMPI_COMM_WORLD_SIZE')}")
+    log.info(f"HVD Rank= {hvd.local_rank()}")
+    log.info(f"HVD Size= {hvd.local_size()}")
     log.info(f"=====================test ======================")
 
     log.info(f"================ BEGIN vq-vae training ============== ")
